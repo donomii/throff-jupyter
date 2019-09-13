@@ -1,0 +1,9 @@
+{
+    "argv": [
+		"throff-jupyter",
+    	"{connection_file}"
+    	],
+    "display_name": "ThroffNotes",
+    "language": "throff",
+    "name": "throff"
+}
