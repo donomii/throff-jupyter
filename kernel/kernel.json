@@ -3,7 +3,7 @@
 		"throff-jupyter",
     	"{connection_file}"
     	],
-    "display_name": "ThroffNotes",
+    "display_name": "Throff",
     "language": "throff",
     "name": "throff"
 }

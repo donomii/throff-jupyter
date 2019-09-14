@@ -308,6 +308,7 @@ func (kernel *Kernel) handleShellMsg(receipt msgReceipt) {
 			log.Fatal(err)
 		}
 	case "complete_request":
+		log.Println("Complete req")
 		if err := handleCompleteRequest(ir, receipt); err != nil {
 			log.Fatal(err)
 		}
@@ -465,6 +466,7 @@ func doEval(ir *interp.Interp, code string) (result string, err error) {
 	}()
 
 	e := throfflib.MakeEngine()
+	e = e.RunString(throfflib.BootStrapString(), "Bootstrap code")
 	ne := e.RunString(code, "Jupyter")
 
 	t := ne.DataStackTop()
