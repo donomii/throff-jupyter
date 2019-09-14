@@ -8,15 +8,12 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"reflect"
 	"runtime"
 	"sync"
 	"time"
 
 	"github.com/donomii/throfflib"
 
-	interp "github.com/cosmos72/gomacro/fast"
-	"github.com/cosmos72/gomacro/xreflect"
 	zmq "github.com/pebbe/zmq4"
 )
 
@@ -100,34 +97,21 @@ func (s *Socket) RunWithSocket(run func(socket *zmq.Socket) error) error {
 }
 
 type Kernel struct {
-	ir      *interp.Interp
-	display *interp.Import
+	ir *throfflib.Engine
+	//	display *interp.Import
 	// map name -> HTMLer, JSONer, Renderer...
 	// used to convert interpreted types to one of these interfaces
-	render map[string]xreflect.Type
+	//	render map[string]xreflect.Type
 }
 
 // runKernel is the main entry point to start the kernel.
 func runKernel(connectionFile string) {
 
 	// Create a new interpreter for evaluating notebook code.
-	ir := interp.New()
+	e := throfflib.MakeEngine()
+	e = e.RunString(throfflib.BootStrapString(), "Bootstrap code")
 
-	// Throw out the error/warning messages that gomacro outputs writes to these streams.
-	ir.Comp.Stdout = ioutil.Discard
-	ir.Comp.Stderr = ioutil.Discard
-
-	// Inject the "display" package to render HTML, JSON, PNG, JPEG, SVG... from interpreted code
-	// maybe a dot-import is easier to use?
-	display, err := ir.Comp.ImportPackageOrError("display", "display")
-	if err != nil {
-		log.Print(err)
-	}
-
-	// Inject the stub "Display" function. declare a variable
-	// instead of a function, because we want to later change
-	// its value to the closure that holds a reference to msgReceipt
-	ir.DeclVar("Display", nil, stubDisplay)
+	ir := e
 
 	// Parse the connection info.
 	var connInfo ConnectionInfo
@@ -164,11 +148,7 @@ func runKernel(connectionFile string) {
 
 	kernel := Kernel{
 		ir,
-		display,
-		nil,
 	}
-	kernel.initRenderers()
-
 	// Start a message receiving loop.
 	for {
 		polled, err := poller.Poll(-1)
@@ -356,6 +336,7 @@ func (kernel *Kernel) handleExecuteRequest(receipt msgReceipt) error {
 	if !silent {
 		ExecCounter++
 	}
+	ir := kernel.ir
 
 	// Prepare the map that will hold the reply content.
 	content := make(map[string]interface{})
@@ -398,17 +379,9 @@ func (kernel *Kernel) handleExecuteRequest(receipt msgReceipt) error {
 		io.Copy(&jupyterStdErr, rErr)
 	}()
 
-	// inject the actual "Display" closure that displays multimedia data in Jupyter
-	ir := kernel.ir
-	displayPlace := ir.ValueOf("Display")
-	displayPlace.Set(reflect.ValueOf(receipt.PublishDisplayData))
-	defer func() {
-		// remove the closure before returning
-		displayPlace.Set(reflect.ValueOf(stubDisplay))
-	}()
-
 	// eval
-	value, executionErr := doEval(ir, code)
+	value, engine, executionErr := doEval(ir, code)
+	kernel.ir = engine
 
 	// Close and restore the streams.
 	wOut.Close()
@@ -428,7 +401,7 @@ func (kernel *Kernel) handleExecuteRequest(receipt msgReceipt) error {
 
 		content["status"] = "ok"
 		content["user_expressions"] = make(map[string]string)
-		ioutil.WriteFile("debug.log", []byte(fmt.Sprintf("data: %+V\ncontent: %+V\n", data, content)), 0777)
+		//ioutil.WriteFile("debug.log", []byte(fmt.Sprintf("data: %+V\ncontent: %+V\n", data, content)), 0777)
 
 		if !silent && len(data.Data) != 0 {
 			// Publish the result of the execution.
@@ -453,7 +426,7 @@ func (kernel *Kernel) handleExecuteRequest(receipt msgReceipt) error {
 
 // doEval evaluates the code in the interpreter. This function captures an uncaught panic
 // as well as the values of the last statement/expression.
-func doEval(ir *interp.Interp, code string) (result string, err error) {
+func doEval(ir *throfflib.Engine, code string) (result string, ne *throfflib.Engine, err error) {
 
 	// Capture a panic from the evaluation if one occurs and store it in the `err` return parameter.
 	defer func() {
@@ -465,14 +438,11 @@ func doEval(ir *interp.Interp, code string) (result string, err error) {
 		}
 	}()
 
-	e := throfflib.MakeEngine()
-	e = e.RunString(throfflib.BootStrapString(), "Bootstrap code")
-	ne := e.RunString(code, "Jupyter")
-
+	ne = ir.RunString(code, "Jupyter")
 	t := ne.DataStackTop()
 	val := t.GetString()
 
-	return val, nil
+	return val, ne, nil
 
 }
 

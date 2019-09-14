@@ -1,18 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"image"
-	"io"
-	"io/ioutil"
-	"net/http"
-	"reflect"
 	"strings"
-
-	basereflect "github.com/cosmos72/gomacro/base/reflect"
-	"github.com/cosmos72/gomacro/xreflect"
 )
 
 // Support an interface similar - but not identical - to the IPython (canonical Jupyter kernel).
@@ -95,64 +87,6 @@ type SVGer = interface {
 // by a closure that knows how to talk with Jupyter
 func stubDisplay(Data) error {
 	return errors.New("cannot display: connection with Jupyter not available")
-}
-
-// fill kernel.renderer map used to convert interpreted types
-// to known rendering interfaces
-func (kernel *Kernel) initRenderers() {
-	kernel.render = make(map[string]xreflect.Type)
-	for name, typ := range kernel.display.Types {
-		if typ.Kind() == reflect.Interface {
-			kernel.render[name] = typ
-		}
-	}
-}
-
-// if vals[] contain a single non-nil value which is auto-renderable,
-// convert it to Data and return it.
-// otherwise return MakeData("text/plain", fmt.Sprint(vals...))
-func (kernel *Kernel) autoRenderResults(vals []interface{}, types []xreflect.Type) Data {
-	var nilcount int
-	var obj interface{}
-	var typ xreflect.Type
-	for i, val := range vals {
-		if kernel.canAutoRender(val, types[i]) {
-			obj = val
-			typ = types[i]
-		} else if val == nil {
-			nilcount++
-		}
-	}
-	if obj != nil && nilcount == len(vals)-1 {
-		return kernel.autoRender("", obj, typ)
-	}
-	if nilcount == len(vals) {
-		// if all values are nil, return empty Data
-		return Data{}
-	}
-	return MakeData(MIMETypeText, fmt.Sprint(vals...))
-}
-
-// return true if data type should be auto-rendered graphically
-func (kernel *Kernel) canAutoRender(data interface{}, typ xreflect.Type) bool {
-	switch data.(type) {
-	case Data, Renderer, SimpleRenderer, HTMLer, JavaScripter, JPEGer, JSONer,
-		Latexer, Markdowner, PNGer, PDFer, SVGer, image.Image:
-		return true
-	}
-	if kernel == nil || typ == nil {
-		return false
-	}
-	// in gomacro, methods of interpreted types are emulated,
-	// thus type-asserting them to interface types as done above cannot succeed.
-	// Manually check if emulated type "pretends" to implement
-	// at least one of the interfaces above
-	for _, xtyp := range kernel.render {
-		if typ.Implements(xtyp) {
-			return true
-		}
-	}
-	return false
 }
 
 var autoRenderers = map[string]func(Data, interface{}) Data{
@@ -250,99 +184,6 @@ var autoRenderers = map[string]func(Data, interface{}) Data{
 	},
 }
 
-// detect and render data types that should be auto-rendered graphically
-func (kernel *Kernel) autoRender(mimeType string, arg interface{}, typ xreflect.Type) Data {
-	var data Data
-	// try Data
-	if x, ok := arg.(Data); ok {
-		data = x
-	}
-
-	if kernel == nil || typ == nil {
-		// try all autoRenderers
-		for _, fun := range autoRenderers {
-			data = fun(data, arg)
-		}
-	} else {
-		// in gomacro, methods of interpreted types are emulated.
-		// Thus type-asserting them to interface types as done by autoRenderer functions above cannot succeed.
-		// Manually check if emulated type "pretends" to implement one or more of the above interfaces
-		// and, in case, tell the interpreter to convert to them
-		for name, xtyp := range kernel.render {
-			fun := autoRenderers[name]
-			if fun == nil || !typ.Implements(xtyp) {
-				continue
-			}
-			conv := kernel.ir.Comp.Converter(typ, xtyp)
-			x := arg
-			if conv != nil {
-				x = basereflect.Interface(conv(reflect.ValueOf(x)))
-				if x == nil {
-					continue
-				}
-			}
-			data = fun(data, x)
-		}
-	}
-	return fillDefaults(data, arg, "", nil, "", nil)
-}
-
-func fillDefaults(data Data, arg interface{}, s string, b []byte, mimeType string, err error) Data {
-	if err != nil {
-		return makeDataErr(err)
-	}
-	if data.Data == nil {
-		data.Data = make(MIMEMap)
-	}
-	// cannot autodetect the mime type of a string
-	if len(s) != 0 && len(mimeType) != 0 {
-		data.Data[mimeType] = s
-	}
-	// ensure plain text is set
-	if data.Data[MIMETypeText] == "" {
-		if len(s) == 0 {
-			s = fmt.Sprint(arg)
-		}
-		data.Data[MIMETypeText] = s
-	}
-	// if []byte is available, use it
-	if len(b) != 0 {
-		if len(mimeType) == 0 {
-			mimeType = http.DetectContentType(b)
-		}
-		if len(mimeType) != 0 && mimeType != MIMETypeText {
-			data.Data[mimeType] = b
-		}
-	}
-	return data
-}
-
-// do our best to render data graphically
-func render(mimeType string, data interface{}) Data {
-	var kernel *Kernel // intentionally nil
-	if kernel.canAutoRender(data, nil) {
-		return kernel.autoRender(mimeType, data, nil)
-	}
-	var s string
-	var b []byte
-	var err error
-	switch data := data.(type) {
-	case string:
-		s = data
-	case []byte:
-		b = data
-	case io.Reader:
-		b, err = ioutil.ReadAll(data)
-	case io.WriterTo:
-		var buf bytes.Buffer
-		data.WriteTo(&buf)
-		b = buf.Bytes()
-	default:
-		panic(fmt.Errorf("unsupported type, cannot render: %T", data))
-	}
-	return fillDefaults(Data{}, data, s, b, mimeType, err)
-}
-
 func makeDataErr(err error) Data {
 	return Data{
 		Data: MIMEMap{
@@ -352,15 +193,6 @@ func makeDataErr(err error) Data {
 			"status":    "error",
 		},
 	}
-}
-
-func Any(mimeType string, data interface{}) Data {
-	return render(mimeType, data)
-}
-
-// same as Any("", data), autodetects MIME type
-func Auto(data interface{}) Data {
-	return render("", data)
 }
 
 func MakeData(mimeType string, data interface{}) Data {
@@ -382,14 +214,6 @@ func MakeData3(mimeType string, plaintext string, data interface{}) Data {
 			mimeType:     data,
 		},
 	}
-}
-
-func File(mimeType string, path string) Data {
-	bytes, err := ioutil.ReadFile(path)
-	if err != nil {
-		panic(err)
-	}
-	return Any(mimeType, bytes)
 }
 
 func HTML(html string) Data {
