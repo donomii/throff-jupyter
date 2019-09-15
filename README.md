@@ -1,5 +1,3 @@
-![alt tag](files/gophernotes-logo.png)
-
 [![Build Status](https://travis-ci.org/throff-jupyter/throff-jupyter.svg?branch=master)](https://travis-ci.org/throff-jupyter/throff-jupyter)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/throff-jupyter/throff-jupyter/blob/master/LICENSE)
 
