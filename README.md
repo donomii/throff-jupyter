@@ -8,7 +8,7 @@
 **Acknowledgements** - This project is forked from [Gophernotes](https://github.com/gopherdata/gophernotes).
 
 - [Examples](#examples)
-- Install gophernotes:
+- Install throff-jupyter:
   - [Prerequisites](#prerequisites)
   - [Linux](#linux)
   - [Mac](#mac)
@@ -82,7 +82,7 @@ Make sure you have the MinGW toolchain:
 
 Then:
 
-1. build and install gophernotes (using the pre-built binaries and `zmq-win\build.bat`):
+1. build and install throff-jupyter (using the pre-built binaries and `zmq-win\build.bat`):
 
     ```
     REM Download w/o building.
@@ -113,7 +113,7 @@ Then:
     jupyter --data-dir
     ```
 
-4. Update `%APPDATA%\jupyter\kernels\gophernotes\kernel.json` with the FULL PATH to your gophernotes.exe (in %GOPATH%\bin), unless it's already on the PATH.  For example:
+4. Update `%APPDATA%\jupyter\kernels\throff-jupyter\kernel.json` with the FULL PATH to your throff-jupyter.exe (in %GOPATH%\bin), unless it's already on the PATH.  For example:
 
     ```
     {
@@ -192,7 +192,7 @@ OSError: [Errno 2] No such file or directory
 
 Stop jupyter, if it's already running.
 
-Add a symlink to `/go/bin/throff-jupyter` from your path to the gophernotes executable. If you followed the instructions above, this will be:
+Add a symlink to `/go/bin/throff-jupyter` from your path to the throff-jupyter executable. If you followed the instructions above, this will be:
 
 ```
 sudo ln -s $HOME/go/bin/throff-jupyter /go/bin/throff-jupyter
