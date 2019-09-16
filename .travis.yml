@@ -11,4 +11,4 @@ install:
   - go get github.com/donomii/throff
   - go build github.com/donomii/throff
 script:
-  - go build ../
+  - cd .. && go build .
